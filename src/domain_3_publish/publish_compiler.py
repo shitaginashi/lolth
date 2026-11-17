@@ -1,17 +1,19 @@
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import List, Dict, Optional
-import json
+
 
 class SupersetProfile(Enum):
     BOILERPLATE = "boilerplate"
     SOCIAL_POST = "social_post"
     MICRO_POST = "micro_post"
 
+
 class AttachmentTier(Enum):
     ATOMIC_TEXT = "atomic_text"
     ILLUSTRATED = "illustrated"
     FANCY = "fancy"
+
 
 @dataclass
 class IllustratedAttachment:
@@ -21,8 +23,9 @@ class IllustratedAttachment:
     color_palette_token: Optional[str] = "cosmic_darkness"
     thumbnail_manifest: Dict[str, str] = field(default_factory=lambda: {
         "thumb_sm": "1080x1080",
-        "thumb_lg": "1920x1080"
+        "thumb_lg": "1920x1080",
     })
+
 
 @dataclass
 class FancyAttachment:
@@ -32,6 +35,7 @@ class FancyAttachment:
     aspect_ratio: str = "16:9"
     fps: int = 60
     resolution: str = "4K_2160p"
+
 
 @dataclass
 class PublishCandidate:
@@ -48,6 +52,7 @@ class PublishCandidate:
     illustrated_attachment: Optional[IllustratedAttachment] = None
     fancy_attachment: Optional[FancyAttachment] = None
 
+
 @dataclass
 class PlatformConfig:
     platform_name: str
@@ -56,12 +61,14 @@ class PlatformConfig:
     include_domain_link: bool = True
     domain_url: str = "ledante_site"
 
+
 @dataclass
 class SidecarAuditLog:
     code: str
     level: str
     message: str
     action: str
+
 
 class PublishCompiler:
     def __init__(self, platform_config: PlatformConfig):
@@ -76,63 +83,66 @@ class PublishCompiler:
 
         footer_elements: List[str] = []
         if candidate.partner_tags:
-            partner_str = " ".join([f"#{t.lstrip('#')}" for t in candidate.partner_tags])
+            partner_str = " ".join([f"#{tag.lstrip('#')}" for tag in candidate.partner_tags])
             footer_elements.append(f"In collaboration with: {partner_str}")
+        footer_text = "\n".join(footer_elements)
 
-        all_tags = []
-        all_tags.extend([f"#{t.lstrip('#')}" for t in candidate.primary_hashtags])
-        all_tags.extend([f"#{t.lstrip('#')}" for t in candidate.secondary_hashtags])
-        all_tags.extend([f"#{t.lstrip('#')}" for t in candidate.boilerplate_hashtags])
-        content_len = len(body_with_domain)
-        headroom = self.config.max_chars - content_len
-        
+        tags = []
+        tags.extend([f"#{tag.lstrip('#')}" for tag in candidate.primary_hashtags])
+        tags.extend([f"#{tag.lstrip('#')}" for tag in candidate.secondary_hashtags])
+        tags.extend([f"#{tag.lstrip('#')}" for tag in candidate.boilerplate_hashtags])
+
+        def assemble(retained_tags: List[str], include_footer: bool = True) -> str:
+            parts = [body_with_domain]
+            if include_footer and footer_text:
+                parts.append(footer_text)
+            if retained_tags:
+                parts.append(" ".join(retained_tags))
+            return "\n\n".join(parts)
+
         audit_logs: List[SidecarAuditLog] = []
         retained_tags: List[str] = []
-        nl = "\n"
-        retained_footer_text = nl.join(footer_elements) if footer_elements else ""
-        
-        needed_for_footer = len(retained_footer_text) + (2 if retained_footer_text else 0)
-        current_headroom = headroom - needed_for_footer
+        include_footer = bool(footer_text)
+        quota_status = "optimal"
 
-        if current_headroom < 0:
+        # If the partner footer alone does not fit, omit it before considering hashtags.
+        if len(assemble([], include_footer)) > self.config.max_chars:
+            include_footer = False
+            quota_status = "body_only"
             audit_logs.append(SidecarAuditLog(
                 code="BODY_EXCEEDS_CAP",
                 level="warn",
-                message=f"Content length ({content_len}) exceeds allocation ({self.config.max_chars}).",
+                message=f"Content and partner footer exceed allocation ({self.config.max_chars}).",
                 action="Footer and hashtags omitted."
             ))
-            retained_footer_text = ""
-            quota_status = "body_only"
+
+        if len(assemble([], include_footer)) > self.config.max_chars:
+            quota_status = "body_exceeds_cap"
+            audit_logs.append(SidecarAuditLog(
+                code="BODY_EXCEEDS_CAP",
+                level="error",
+                message=f"Content length ({len(body_with_domain)}) exceeds allocation ({self.config.max_chars}).",
+                action="Body retained unchanged; payload exceeds platform cap."
+            ))
         else:
-            accumulated_tags_len = 0
-            for tag in all_tags:
-                tag_cost = len(tag) + 1
-                if accumulated_tags_len + tag_cost <= current_headroom:
-                    retained_tags.append(tag)
-                    accumulated_tags_len += tag_cost
+            for tag in tags:
+                proposed = retained_tags + [tag]
+                if len(assemble(proposed, include_footer)) <= self.config.max_chars:
+                    retained_tags = proposed
                 else:
+                    quota_status = "pruned"
                     audit_logs.append(SidecarAuditLog(
                         code="HEADROOM_CONSTRAINED",
                         level="info",
                         message="Platform headroom limit reached.",
-                        action=f"Pruned hashtag {tag}"
+                        action=f"Pruned hashtag {tag} and any lower-priority hashtags."
                     ))
                     break
-            quota_status = "optimal" if len(retained_tags) == len(all_tags) else "pruned"
 
-        tag_block = " ".join(retained_tags)
-        payload_parts = [body_with_domain]
-        if retained_footer_text:
-            payload_parts.append(retained_footer_text)
-        if tag_block:
-            payload_parts.append(tag_block)
-
-        dnl = "\n\n"
-        final_payload_text = dnl.join(payload_parts)
-
+        final_payload_text = assemble(retained_tags, include_footer)
         attachment_manifest = {
             "tier": candidate.attachment_tier.value,
-            "media_payload": None
+            "media_payload": None,
         }
 
         if candidate.attachment_tier == AttachmentTier.ILLUSTRATED and candidate.illustrated_attachment:
@@ -142,7 +152,7 @@ class PublishCompiler:
                 "aspect_ratio": candidate.illustrated_attachment.aspect_ratio,
                 "alt_text": candidate.illustrated_attachment.alt_text,
                 "color_palette_token": candidate.illustrated_attachment.color_palette_token,
-                "thumbnail_manifest": candidate.illustrated_attachment.thumbnail_manifest
+                "thumbnail_manifest": candidate.illustrated_attachment.thumbnail_manifest,
             }
         elif candidate.attachment_tier == AttachmentTier.FANCY and candidate.fancy_attachment:
             attachment_manifest["media_payload"] = {
@@ -152,7 +162,7 @@ class PublishCompiler:
                 "video_outro_logo_slots": candidate.fancy_attachment.video_outro_logo_slots,
                 "aspect_ratio": candidate.fancy_attachment.aspect_ratio,
                 "fps": candidate.fancy_attachment.fps,
-                "resolution": candidate.fancy_attachment.resolution
+                "resolution": candidate.fancy_attachment.resolution,
             }
 
         sidecar_manifest = {
@@ -164,20 +174,20 @@ class PublishCompiler:
             },
             "budget_interface": {
                 "platform_max_chars": self.config.max_chars,
-                "content_body_chars": content_len,
-                "headroom_remaining": headroom,
-                "allocated_footer_chars": len(final_payload_text) - content_len,
+                "content_body_chars": len(body_with_domain),
+                "headroom_remaining": self.config.max_chars - len(body_with_domain),
+                "allocated_footer_chars": len(final_payload_text) - len(body_with_domain),
                 "total_payload_chars": len(final_payload_text),
             },
             "execution_status": {
                 "superset_profile_applied": self.config.profile.value,
                 "quota_status": quota_status,
                 "tags_retained": len(retained_tags),
-                "tags_pruned": len(all_tags) - len(retained_tags),
+                "tags_pruned": len(tags) - len(retained_tags),
             },
             "attachment_status": {
                 "tier": candidate.attachment_tier.value,
-                "attached": attachment_manifest["media_payload"] is not None
+                "attached": attachment_manifest["media_payload"] is not None,
             },
             "errata_audit_log": [
                 {
