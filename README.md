@@ -21,3 +21,4 @@ cargo test --manifest-path src/domain_2_trend/Cargo.toml
 python -m unittest discover -s tests -v
 python -m py_compile src/domain_3_publish/publish_compiler.py
 sqlite3 :memory: < schemas/taxonomy_master.sql
+```
