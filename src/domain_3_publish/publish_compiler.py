@@ -1,45 +1,28 @@
-import json
-import yaml
+"""Mark 1 draft payload compiler. It compiles; it does not govern or publish."""
+
+from __future__ import annotations
+
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import List, Dict, Optional
+from pathlib import Path
+from typing import Dict, List, Optional, Sequence
 
-class SupersetProfile(Enum):
+import yaml
+
+from workflow import ControlTower, Review
+
+
+class SupersetProfile(str, Enum):
     BOILERPLATE = "boilerplate"
     SOCIAL_POST = "social_post"
     MICRO_POST = "micro_post"
 
-class AttachmentTier(Enum):
+
+class AttachmentTier(str, Enum):
     ATOMIC_TEXT = "atomic_text"
     ILLUSTRATED = "illustrated"
     FANCY = "fancy"
 
-# STATIC MIANVI REGISTRY (STUB FOR MARK 0)
-STATIC_MIANZI_REGISTRY = {
-    "P0": [
-        {"id": "comfyui", "name": "ComfyUI Node Engine", "weight": 95, "logo_slot": "P0_DS0P_Core"},
-        {"id": "fairlight", "name": "Fairlight NLE", "weight": 90, "logo_slot": "P0_Fairlight_Audio"},
-    ],
-    "P1": [
-        {"id": "nvidia_cuda", "name": "NVIDIA CUDA Acceleration", "weight": 85, "logo_slot": "P1_NVIDIA_Omniverse"},
-        {"id": "linux_runtime", "name": "Enterprise Linux", "weight": 80, "logo_slot": "P1_Linux_Kernel"},
-    ],
-    "P2": [
-        {"id": "mcp_harness", "name": "Model Context Protocol (MCP)", "weight": 60, "logo_slot": "P2_MCP_Daemon"},
-    ],
-    "P3": [
-        {"id": "dsop_branding_notebook", "name": "DS0P Branding Master Notebook", "weight": 40, "logo_slot": "P3_Local_Notebook"},
-    ],
-}
-
-@dataclass
-class AgentGatekeeperApproval:
-    approval_id: str
-    tone_audit_status: str
-    tri_tone_scores: Dict[str, float]
-    prohibited_conventions_check: Dict[str, bool]
-    fsr_star_rank_cleared: str
-    target_platform_fsr_ceiling: str
 
 @dataclass
 class PublishCandidate:
@@ -50,12 +33,12 @@ class PublishCandidate:
     attachment_tier: AttachmentTier = AttachmentTier.ATOMIC_TEXT
     media_url: Optional[str] = None
     alt_text: Optional[str] = None
-    gatekeeper_approval: Optional[AgentGatekeeperApproval] = None
     partner_tags: List[str] = field(default_factory=list)
     primary_hashtags: List[str] = field(default_factory=list)
     secondary_hashtags: List[str] = field(default_factory=list)
     boilerplate_hashtags: List[str] = field(default_factory=list)
     tool_ids: List[str] = field(default_factory=list)
+
 
 @dataclass
 class PlatformConfig:
@@ -65,224 +48,211 @@ class PlatformConfig:
     include_domain_link: bool = True
     domain_url: str = "ledante.com"
 
+
+# Illustrative display metadata only. Mianzi policy/registry is not implemented.
+STATIC_MIANZI_REGISTRY = {
+    "comfyui": {"name": "ComfyUI Node Engine", "weight": 95, "logo_slot": "P0_DS0P_Core"},
+    "fairlight": {"name": "Fairlight NLE", "weight": 90, "logo_slot": "P0_Fairlight_Audio"},
+    "nvidia_cuda": {"name": "NVIDIA CUDA Acceleration", "weight": 85, "logo_slot": "P1_NVIDIA_Omniverse"},
+    "linux_runtime": {"name": "Enterprise Linux", "weight": 80, "logo_slot": "P1_Linux_Kernel"},
+    "mcp_harness": {"name": "Model Context Protocol (MCP)", "weight": 60, "logo_slot": "P2_MCP_Daemon"},
+    "dsop_branding_notebook": {"name": "DS0P Branding Master Notebook", "weight": 40, "logo_slot": "P3_Local_Notebook"},
+}
+
+
+def load_contract(path: Path) -> tuple[dict, dict]:
+    """Load and minimally validate the canonical YAML fixture/contract."""
+    try:
+        raw = yaml.safe_load(path.read_text(encoding="utf-8"))
+    except (OSError, yaml.YAMLError) as exc:
+        raise ValueError(f"could not load gatekeeper contract: {exc}") from exc
+    if not isinstance(raw, dict):
+        raise ValueError("contract root must be a mapping")
+    review = raw.get("gatekeeper_review")
+    candidate = raw.get("candidate_payload")
+    if not isinstance(review, dict) or not isinstance(candidate, dict):
+        raise ValueError("contract requires gatekeeper_review and candidate_payload mappings")
+    required_candidate = ("candidate_id", "title", "body_text", "domain_category", "attachment_tier")
+    missing = [key for key in required_candidate if key not in candidate]
+    if missing:
+        raise ValueError(f"candidate_payload missing required keys: {', '.join(missing)}")
+    if not isinstance(review.get("prohibited_conventions_check"), dict):
+        raise ValueError("gatekeeper_review.prohibited_conventions_check must be a mapping")
+    fsr = review.get("fsr")
+    if not isinstance(fsr, dict) or fsr.get("status") not in {"not_evaluated", "cleared", "rejected"}:
+        raise ValueError("gatekeeper_review.fsr.status must be not_evaluated, cleared, or rejected")
+    return review, candidate
+
+
 class PublishCompiler:
+    """Pure draft compiler. Only the Control Tower owns review/release decisions."""
+
     def __init__(self, platform_config: PlatformConfig):
+        if platform_config.max_chars < 0:
+            raise ValueError("max_chars must be non-negative")
         self.config = platform_config
 
-    def resolve_mianzi_stub(self, tool_ids: List[str]) -> Dict:
-        attributed_tools = []
-        outro_slots = []
-        for tier, tools in STATIC_MIANZI_REGISTRY.items():
-            for t in tools:
-                if not tool_ids or t["id"] in tool_ids:
-                    attributed_tools.append(t)
-                    if t.get("logo_slot"):
-                        outro_slots.append(t["logo_slot"])
-        
-        attributed_tools.sort(key=lambda x: x["weight"], reverse=True)
+    @staticmethod
+    def resolve_mianzi_stub(tool_ids: Sequence[str]) -> Dict:
+        selected = set(tool_ids)
+        tools = [
+            {"id": tool_id, **STATIC_MIANZI_REGISTRY[tool_id]}
+            for tool_id in selected
+            if tool_id in STATIC_MIANZI_REGISTRY
+        ]
+        tools.sort(key=lambda tool: tool["weight"], reverse=True)
         return {
-            "attributed_tools": attributed_tools,
-            "outro_logo_slots": outro_slots
+            "status": "stub",
+            "selected_tools": tools,
+            "unresolved_tool_ids": sorted(selected - STATIC_MIANZI_REGISTRY.keys()),
+            "outro_logo_slots": [tool["logo_slot"] for tool in tools if tool.get("logo_slot")],
         }
 
-    def compile(self, candidate: PublishCandidate) -> Dict:
-        gatekeeper_log = None
-        if candidate.gatekeeper_approval:
-            app = candidate.gatekeeper_approval
-            gatekeeper_log = {
-                "approval_id": app.approval_id,
-                "status": app.tone_audit_status,
-                "tri_tone_scores": app.tri_tone_scores,
-                "fsr_cleared": app.fsr_star_rank_cleared <= app.target_platform_fsr_ceiling
-            }
+    def compile(self, candidate: PublishCandidate, review: Review) -> Dict:
+        # Compile is allowed only after the Tower's non-FSR review gate. It never authorizes publish.
+        decision = ControlTower().review(review)
+        if not decision.compile_allowed:
+            raise ValueError("Control Tower holds candidate: " + ", ".join(decision.reasons))
 
         body = candidate.body_text.strip()
+        body_with_domain = body
         if self.config.include_domain_link and self.config.profile != SupersetProfile.MICRO_POST:
             body_with_domain = f"{body}\n\n{self.config.domain_url}"
-        else:
-            body_with_domain = body
 
-        footer_elements: List[str] = []
+        footer = ""
         if candidate.partner_tags:
-            partner_str = " ".join([f'#{t.lstrip("#")}' for t in candidate.partner_tags])
-            footer_elements.append(f"In collaboration with: {partner_str}")
+            footer = "In collaboration with: " + " ".join(
+                f"#{tag.lstrip('#')}" for tag in candidate.partner_tags
+            )
+        tags = [
+            f"#{tag.lstrip('#')}"
+            for group in (
+                candidate.primary_hashtags,
+                candidate.secondary_hashtags,
+                candidate.boilerplate_hashtags,
+            )
+            for tag in group
+        ]
 
-        all_tags = []
-        all_tags.extend([f'#{t.lstrip("#")}' for t in candidate.primary_hashtags])
-        all_tags.extend([f'#{t.lstrip("#")}' for t in candidate.secondary_hashtags])
-        all_tags.extend([f'#{t.lstrip("#")}' for t in candidate.boilerplate_hashtags])
-        
-        content_len = len(body_with_domain)
-        headroom = self.config.max_chars - content_len
-        
-        audit_logs = []
-        retained_tags = []
-        nl = "\n"
-        retained_footer_text = nl.join(footer_elements) if footer_elements else ""
-        
-        needed_for_footer = len(retained_footer_text) + (2 if retained_footer_text else 0)
-        current_headroom = headroom - needed_for_footer
+        def assemble(selected_tags: Sequence[str], include_footer: bool) -> str:
+            parts = [body_with_domain]
+            if footer and include_footer:
+                parts.append(footer)
+            if selected_tags:
+                parts.append(" ".join(selected_tags))
+            return "\n\n".join(parts)
 
-        if current_headroom < 0:
-            audit_logs.append({
-                "code": "BODY_EXCEEDS_CAP",
-                "level": "warn",
-                "message": f"Content length ({content_len}) exceeds allocation ({self.config.max_chars}).",
-                "action": "Footer and hashtags omitted."
-            })
-            retained_footer_text = ""
+        include_footer = bool(footer)
+        retained: List[str] = []
+        audit: List[dict] = []
+        quota_status = "optimal"
+        if len(assemble([], include_footer)) > self.config.max_chars:
+            include_footer = False
             quota_status = "body_only"
+            audit.append({"code": "FOOTER_OMITTED", "reason": "body_and_footer_exceed_cap"})
+        if len(assemble([], include_footer)) > self.config.max_chars:
+            quota_status = "body_exceeds_cap"
+            audit.append({"code": "BODY_EXCEEDS_CAP", "reason": "body_retained_without_truncation"})
         else:
-            accumulated_tags_len = 0
-            for tag in all_tags:
-                tag_cost = len(tag) + 1
-                if accumulated_tags_len + tag_cost <= current_headroom:
-                    retained_tags.append(tag)
-                    accumulated_tags_len += tag_cost
+            for tag in tags:
+                proposed = retained + [tag]
+                if len(assemble(proposed, include_footer)) <= self.config.max_chars:
+                    retained = proposed
                 else:
-                    audit_logs.append({
-                        "code": "HEADROOM_CONSTRAINED",
-                        "level": "info",
-                        "message": "Platform headroom limit reached.",
-                        "action": f"Pruned hashtag {tag}"
-                    })
+                    quota_status = "pruned"
+                    audit.append({"code": "HEADROOM_CONSTRAINED", "pruned_from": tag})
                     break
-            quota_status = "optimal" if len(retained_tags) == len(all_tags) else "pruned"
 
-        tag_block = " ".join(retained_tags)
-        payload_parts = [body_with_domain]
-        if retained_footer_text:
-            payload_parts.append(retained_footer_text)
-        if tag_block:
-            payload_parts.append(tag_block)
-
-        dnl = "\n\n"
-        final_payload_text = dnl.join(payload_parts)
-
-        mianzi_data = self.resolve_mianzi_stub(candidate.tool_ids)
-
+        text = assemble(retained, include_footer)
+        mianzi = self.resolve_mianzi_stub(candidate.tool_ids)
         media_payload = None
-        if candidate.attachment_tier == AttachmentTier.ILLUSTRATED:
+        if candidate.attachment_tier != AttachmentTier.ATOMIC_TEXT and candidate.media_url:
             media_payload = {
-                "type": "image",
-                "image_url": candidate.media_url or "mock_visual_asset",
-                "alt_text": candidate.alt_text or candidate.title,
-                "color_palette_token": "monochrome_abyssal"
+                "type": "image" if candidate.attachment_tier == AttachmentTier.ILLUSTRATED else "video",
+                "url": candidate.media_url,
+                "alt_text": candidate.alt_text,
+                "validation_status": "not_evaluated",
             }
-        elif candidate.attachment_tier == AttachmentTier.FANCY:
-            media_payload = {
-                "type": "video",
-                "video_url": candidate.media_url or "mock_video_asset",
-                "alt_text": candidate.alt_text or candidate.title,
-                "video_outro_logo_slots": mianzi_data["outro_logo_slots"],
-                "fps": 60,
-                "resolution": "4K_2160p"
-            }
-
-        sidecar_manifest = {
+        attachment_status = {
+            "tier": candidate.attachment_tier.value,
+            "requested": candidate.attachment_tier != AttachmentTier.ATOMIC_TEXT,
+            "provided": bool(candidate.media_url) if candidate.attachment_tier != AttachmentTier.ATOMIC_TEXT else False,
+            "validation_status": "not_implemented" if candidate.attachment_tier != AttachmentTier.ATOMIC_TEXT else "not_applicable",
+        }
+        manifest = {
             "run_metadata": {
                 "candidate_id": candidate.candidate_id,
                 "target_platform": self.config.platform_name,
                 "profile_applied": self.config.profile.value,
-                "attachment_tier": candidate.attachment_tier.value
+                "attachment_tier": candidate.attachment_tier.value,
+                "artifact_status": "draft_compiled",
             },
-            "gatekeeper_audit": gatekeeper_log,
+            "governance": {
+                "compile_allowed": decision.compile_allowed,
+                "publish_allowed": decision.publish_allowed,
+                "status": decision.status,
+                "reasons": decision.reasons,
+                "fsr_status": review.fsr_status,
+            },
             "budget_interface": {
                 "platform_max_chars": self.config.max_chars,
-                "content_body_chars": content_len,
-                "headroom_remaining": headroom,
-                "allocated_footer_chars": len(final_payload_text) - content_len,
-                "total_payload_chars": len(final_payload_text)
+                "content_body_chars": len(body_with_domain),
+                "headroom_remaining": self.config.max_chars - len(body_with_domain),
+                "total_payload_chars": len(text),
+                "within_configured_limit": len(text) <= self.config.max_chars,
             },
             "execution_status": {
-                "superset_profile_applied": self.config.profile.value,
                 "quota_status": quota_status,
-                "tags_retained": len(retained_tags),
-                "tags_pruned": len(all_tags) - len(retained_tags)
+                "tags_retained": len(retained),
+                "tags_pruned": len(tags) - len(retained),
             },
-            "attachment_status": {
-                "tier": candidate.attachment_tier.value,
-                "attached": candidate.attachment_tier != AttachmentTier.ATOMIC_TEXT
-            },
+            "attachment_status": attachment_status,
             "mianzi_attribution_stub": {
-                "top_attributed_tool": mianzi_data["outro_logo_slots"][0] if mianzi_data["outro_logo_slots"] else None,
-                "total_tools_credited": len(mianzi_data["attributed_tools"])
+                "status": mianzi["status"],
+                "selected_tool_ids": [tool["id"] for tool in mianzi["selected_tools"]],
+                "unresolved_tool_ids": mianzi["unresolved_tool_ids"],
+                "outro_logo_slots": mianzi["outro_logo_slots"],
             },
-            "errata_audit_log": audit_logs
+            "errata_audit_log": audit,
+        }
+        return {
+            "atomic_text_base": text,
+            "media_payload": media_payload,
+            "sidecar_manifest": manifest,
         }
 
-        return {
-            "atomic_text_base": final_payload_text,
-            "media_payload": media_payload,
-            "sidecar_yaml": yaml.dump(sidecar_manifest, sort_keys=False)
-        }
+
+def main() -> None:
+    contract_path = Path(__file__).with_name("agent_gatekeeper.yml")
+    raw_review, raw_candidate = load_contract(contract_path)
+    review = Review(
+        approval_id=raw_review.get("approval_id"),
+        status=str(raw_review.get("status", "pending")),
+        prohibited_conventions_check=raw_review["prohibited_conventions_check"],
+        fsr_status=raw_review["fsr"]["status"],
+    )
+    candidate = PublishCandidate(
+        candidate_id=raw_candidate["candidate_id"],
+        title=raw_candidate["title"],
+        body_text=raw_candidate["body_text"],
+        domain_category=raw_candidate["domain_category"],
+        attachment_tier=AttachmentTier(raw_candidate["attachment_tier"]),
+        media_url=raw_candidate.get("media_url"),
+        alt_text=raw_candidate.get("alt_text"),
+        partner_tags=raw_candidate.get("partner_tags", []),
+        primary_hashtags=raw_candidate.get("primary_hashtags", []),
+        secondary_hashtags=raw_candidate.get("secondary_hashtags", []),
+        boilerplate_hashtags=raw_candidate.get("boilerplate_hashtags", []),
+        tool_ids=raw_candidate.get("tool_ids", []),
+    )
+    compiler = PublishCompiler(PlatformConfig("x_micro", SupersetProfile.MICRO_POST, 280))
+    decision = ControlTower().review(review)
+    if not decision.compile_allowed:
+        print(f"candidate held by Control Tower: {', '.join(decision.reasons)}")
+        return
+    result = compiler.compile(candidate, review)
+    print(yaml.safe_dump(result["sidecar_manifest"], sort_keys=False))
+
 
 if __name__ == "__main__":
-    yaml_contract_str = """
-agent_gatekeeper_approval:
-  approval_id: "auth_token_dsop_9921"
-  tone_audit_status: "PASSED"
-  tri_tone_scores:
-    authoritative: 0.94
-    philosophical: 0.91
-    evocative: 0.88
-  prohibited_conventions_check:
-    sensationalism_detected: false
-    lighthearted_humor_detected: false
-  fsr_star_rank_cleared: "*"
-  target_platform_fsr_ceiling: "*"
-
-candidate_payload:
-  candidate_id: "pluto_yuggoth_01"
-  title: "Latent Navigation Spec"
-  agent_polished_body: "Thermal surveys confirm dark gravitational perturbers beyond Pluto at 120 AU. Remote outposts observe our sun from the frozen rim of the solar system."
-  domain_category: "ai_mechanics"
-  attachment_tier: "fancy"
-  media_url: "mock_video_asset"
-  alt_text: "Deep space thermal scan showing Yuggoth outpost"
-  partner_tags: ["JWST", "ComfyUI"]
-  primary_hashtags: ["CosmicHorror", "Yuggoth"]
-  secondary_hashtags: ["PlanetX", "Astronomy"]
-  boilerplate_hashtags: ["DS0P", "GenerativeSciFi"]
-  tool_ids: ["comfyui", "nvidia_cuda", "mcp_harness", "dsop_branding_notebook"]
-"""
-    raw_data = yaml.safe_load(yaml_contract_str)
-    gk_raw = raw_data["agent_gatekeeper_approval"]
-    cd_raw = raw_data["candidate_payload"]
-
-    gatekeeper = AgentGatekeeperApproval(
-        approval_id=gk_raw ["approval_id"],
-        tone_audit_status=gk_raw["tone_audit_status"],
-        tri_tone_scores=gk_raw["tri_tone_scores"],
-        prohibited_conventions_check=gk_raw["prohibited_conventions_check"],
-        fsr_star_rank_cleared=gk_raw ["fsr_star_rank_cleared"],
-        target_platform_fsr_ceiling=gk_raw["target_platform_fsr_ceiling"]
-    )
-
-    candidate = PublishCandidate(
-        candidate_id=cd_raw["candidate_id"],
-        title=cd_raw["title"],
-        body_text=cd_raw ["agent_polished_body"],
-        domain_category=cd_raw["domain_category"],
-        attachment_tier=AttachmentTier(cd_raw["attachment_tier"]),
-        media_url=cd_raw["media_url"],
-        alt_text=cd_raw["alt_text"],
-        gatekeeper_approval=gatekeeper,
-        partner_tags=cd_raw["partner_tags"],
-        primary_hashtags=cd_raw ["primary_hashtags"],
-        secondary_hashtags=cd_raw["secondary_hashtags"],
-        boilerplate_hashtags=cd_raw["boilerplate_hashtags"],
-        tool_ids=cd_raw["tool_ids"]
-    )
-
-    x_micro_config = PlatformConfig(
-        platform_name="x_micro",
-        profile=SupersetProfile.MICRO_POST,
-        max_chars=280
-    )
-
-    compiler = PublishCompiler(x_micro_config)
-    res = compiler.compile(candidate)
-
-    print("candidate compiled successfully")
-    print(res["sidecar_yaml"])
+    main()

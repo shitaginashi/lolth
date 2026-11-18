@@ -1,25 +1,28 @@
-agent_gatekeeper_approval: 
-    approval_id: "auth_token_dsop_9921" 
-    tone_audit_status: "PASSED" 
-    tri_tone_scores: 
-        authoritative: 0.94 
-        philosophical: 0.91 
-        evocative: 0.88 
-    prohibited_conventions_check: 
-    sensationalism_detected: false 
-    lighthearted_humor_detected: false 
-    fsr_star_rank_cleared: "*" 
-    target_platform_fsr_ceiling: "*" 
+# Mark 1 sample input contract. All values are illustrative, not review evidence.
+gatekeeper_review:
+  approval_id: demo-approval-001
+  status: pending
+  prohibited_conventions_check:
+    sensationalism_detected: null
+    lighthearted_humor_detected: null
+  fsr:
+    status: not_evaluated
+    asset_rank: null
+    platform_ceiling: null
 
-candidate_payload: 
-    candidate_id: "pluto_yuggoth_01" 
-    title: "Latent Navigation Spec" 
-    agent_polished_body: "Thermal surveys confirm dark gravitational perturbers beyond Pluto at 120 AU. Remote outposts observe our sun from the frozen rim of the solar system." 
-    domain_category: "ai_mechanics" 
-    attachment_tier: "fancy" 
-    media_url: "https://video_host/sample_yuggoth.mp4" 
-    partner_tags: ["JWST", "ComfyUI"] 
-    primary_hashtags: ["CosmicHorror", "Yuggoth"] 
-    secondary_hashtags: ["PlanetX", "Astronomy"] 
-    boilerplate_hashtags: ["DS0P", "GenerativeSciFi"] 
-    tool_ids: ["comfyui", "nvidia_cuda", "mcp_harness", "dsop_branding_notebook"]
+candidate_payload:
+  candidate_id: sample-yuggoth-001
+  title: Latent Navigation Spec
+  body_text: >-
+    Thermal surveys describe dark gravitational perturbers beyond Pluto.
+    Remote outposts observe our sun from the frozen rim of the solar system.
+  domain_category: ai_mechanics
+  source: sample
+  attachment_tier: fancy
+  media_url: null
+  alt_text: null
+  partner_tags: [JWST, ComfyUI]
+  primary_hashtags: [CosmicHorror, Yuggoth]
+  secondary_hashtags: [PlanetX, Astronomy]
+  boilerplate_hashtags: [DS0P, GenerativeSciFi]
+  tool_ids: [comfyui, nvidia_cuda, mcp_harness, dsop_branding_notebook]

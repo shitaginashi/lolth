@@ -1,43 +1,45 @@
 # Welcome, visiting agents
 
-Philoxenia: you are welcome here. Help us improve Lolth with care, curiosity, and clear communication. Treat this repository as a work in progress, not as a finished system.
+**Philoxenia:** you are welcome here. Help improve Lolth with care, curiosity, and clear communication. This is a proof of concept; please be candid about what works and what remains a sketch.
 
-## Project status: proof of concept
+## Project status and boundaries
 
-Lolth is an early scaffold. Some paths are demonstrations or placeholders, not production behavior. Be explicit about that in code, documentation, and summaries. Do not imply that an unimplemented capability works end to end.
+Lolth is not a production publishing system. Do not describe a placeholder as an implemented integration, policy, or authorization control.
 
-Known limitations:
-
-- Harvest currently has SQL schemas, but no implemented ingestion pipeline.
-- The Rust trend engine accepts candidates from its caller; it does not read the harvest database.
-- Its embedding is a fixed placeholder vector, its filtering is a simple magnitude threshold, and its trend score is illustrative—not a production model.
-- Persistence currently reports a count; it does not write to durable storage.
-- The Python publisher builds text and attachment manifests; it does not publish to platform APIs. Character limits may also differ from a platform’s actual counting rules.
+- Harvest has SQL schemas but no ingestion pipeline.
+- The Rust trend engine receives candidates from its caller. Embeddings, ranking, and persistence are illustrative stubs.
+- Mark 1 explores a Staging Area, a separate Content Bank for curated/preloaded content, and a Control Tower that governs review and lifecycle transitions.
+- The Python compiler creates draft payloads only. There is no platform publishing adapter or real authorization integration.
+- FSR policy is TBD and must remain `not_evaluated`; do not infer clearance or authorize publishing from a placeholder.
+- Mianzi is a selection-only stub. Never fabricate attribution; an empty selection means no selected tools.
+- Media presence and media validation are distinct. No media traversal/readiness validation is implemented.
+- `src/domain_3_publish/agent_gatekeeper.yml` is the canonical sample input contract. Its demo/pending values are fixtures, not real approval evidence.
 
 ## Repository map
 
-- `docs/DS0P_System_Reference_Document_v5.md` — broader system vision and design reference.
-- `schemas/` — harvest and attribution-taxonomy SQL schemas.
-- `src/domain_2_trend/` — Rust trend-engine proof of concept.
-- `src/domain_3_publish/` — Python publish-payload compiler.
-- `tests/` — Python regression tests.
+- `docs/DS0P_System_Reference_Document_v5.md` — design vision/reference.
+- `schemas/` — SQLite schema scripts.
+- `src/domain_2_trend/` — Rust trend-engine scaffold.
+- `src/domain_3_publish/` — Python publisher workflow and compiler.
+- `tests/` — automated checks.
 
-## Before changing code
+## Working agreements
 
-1. Read the relevant code and documentation; preserve the distinction between current behavior and planned design.
-2. Keep changes scoped. Don’t rewrite the system reference document or expand the project’s claims unless asked.
-3. Prefer small, testable improvements. Add or update tests when behavior changes.
-4. Never add credentials, private data, or real external side effects.
+1. Read the relevant code and this status section before changing behavior.
+2. Keep changes scoped; do not rewrite the reference document or expand claims without a request.
+3. Add/update tests when behavior changes and run relevant checks.
+4. Do not add credentials, private data, external side effects, or fabricated approval/audit evidence.
+5. Keep review, compile, and publish authorization as distinct stages. The compiler must not act as the Control Tower.
+6. In handoffs, report changed files, checks actually run, and remaining limitations plainly.
 
-## Validate changes
+## Validation
 
-Run the checks relevant to your changes from the repository root:
+From the repository root:
 
 ```bash
 cargo test --manifest-path src/domain_2_trend/Cargo.toml
 python -m unittest discover -s tests -v
-python -m py_compile src/domain_3_publish/publish_compiler.py
+python -m py_compile src/domain_3_publish/publish_compiler.py src/domain_3_publish/workflow.py
+python -m src.domain_3_publish.publish_compiler
 sqlite3 :memory: < schemas/taxonomy_master.sql
 ```
-
-In your handoff, say what changed, which checks you ran, and what remains incomplete. If you could not run a check, say so plainly.
