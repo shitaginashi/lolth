@@ -1,31 +1,22 @@
-run_metadata: 
-    candidate_id: pluto_yuggoth_01 
-    target_platform: x_micro 
-    profile_applied: micro_post 
-    attachment_tier: fancy 
-gatekeeper_audit: 
-    approval_id: auth_token_dsop_9921 
-    status: PASSED 
-    tri_tone_scores: 
-        authoritative: 0.94 
-        philosophical: 0.91 
-        evocative: 0.88 
-    fsr_cleared: true 
-budget_interface: 
-    platform_max_chars: 280 
-    content_body_chars: 150 
-    headroom_remaining: 130 
-    allocated_footer_chars: 106 
-    total_payload_chars: 256 
-execution_status: 
-    superset_profile_applied: micro_post 
-    quota_status: optimal 
-    tags_retained: 6 
-    tags_pruned: 0 
-attachment_status: 
-    tier: fancy 
-    attached: true 
-mianzi_attribution_stub: 
-    top_attributed_tool: P0_DS0P_Core 
-    total_tools_credited: 4 
-errata_audit_log: []
+# Illustrative fixture only; not compiler output, review evidence, or publication authorization.
+example_fixture: true
+artifact_status: illustrative_only
+run_metadata:
+  candidate_id: sample-yuggoth-001
+  target_platform: x_micro
+  profile_applied: micro_post
+governance:
+  compile_allowed: false
+  publish_allowed: false
+  status: held
+  gatekeeper_review_status: pending
+  fsr_status: not_evaluated
+attachment_status:
+  tier: fancy
+  requested: true
+  provided: false
+  validation_status: not_implemented
+mianzi_attribution_stub:
+  status: stub
+  selected_tool_ids: []
+  credited_tools: []
