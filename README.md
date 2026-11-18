@@ -16,7 +16,7 @@ Harvest / preloaded content
    Future platform adapter (not implemented; secrets belong here)
 ```
 
-The Control Tower governs workflow transitions; the compiler is a consumer, not an authority. Compilation creates a draft artifact and does not mean approval to publish. The current FSR policy is **not implemented**: it is recorded as `not_evaluated`, and publication remains blocked until policy is defined and evaluated. Mianzi is a selection-only stub; no tools are attributed unless their IDs are explicitly supplied. Media manifests distinguish requested, supplied, and validated states; validation/traversal is not implemented.
+The Control Tower governs workflow transitions; the compiler is a consumer, not an authority. Compilation creates a draft artifact and does not mean approval to publish. The current FSR policy is **not implemented**: it is recorded as `not_evaluated`, and publishing remains blocked until policy is defined and evaluated. Mianzi is a selection-only stub; no tools are attributed unless their IDs are explicitly supplied. Media manifests distinguish requested, supplied, and validated states; media traversal/readiness is not implemented.
 
 ## Repository map
 
@@ -43,4 +43,4 @@ python -m src.domain_3_publish.publish_compiler
 sqlite3 :memory: < schemas/taxonomy_master.sql
 ```
 
-The sample compiler command reads `agent_gatekeeper.yml`, compiles a draft, and reports governance status. It does not publish. FSR remains pending/not evaluated until its policy is specified.
+The sample compiler command reads `agent_gatekeeper.yml` and reports the Control Tower’s decision. The checked-in sample is pending, so it will be held; it is not publication approval. FSR remains not evaluated until policy is specified.

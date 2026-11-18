@@ -9,7 +9,10 @@ from typing import Dict, List, Optional, Sequence
 
 import yaml
 
-from workflow import ControlTower, Review
+try:  # Support both `python -m ...publish_compiler` and direct script/test imports.
+    from .workflow import ControlTower, Review
+except ImportError:  # pragma: no cover - used when this file is imported as a top-level module.
+    from workflow import ControlTower, Review
 
 
 class SupersetProfile(str, Enum):
